@@ -8,12 +8,12 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy all requirements
-COPY requirements*.txt ./
+# Copy requirements (only use dashboard requirements)
+COPY requirements-dashboard.txt ./requirements.txt
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements-dashboard.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY dashboard_server.py .
