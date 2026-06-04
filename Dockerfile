@@ -5,6 +5,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -12,7 +13,8 @@ COPY requirements-dashboard.txt .
 COPY requirements-selfbot.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements-dashboard.txt && \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-dashboard.txt && \
     pip install --no-cache-dir -r requirements-selfbot.txt
 
 # Copy application files
@@ -26,6 +28,7 @@ EXPOSE 5000
 # Set environment variables
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-# Run both the dashboard server and selfbot
-CMD python dashboard_server.py & python selfbot.py
+# Run the dashboard server
+CMD ["python", "dashboard_server.py"]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Discord Selfbot with Dashboard Integration
+Discord Selfbot with Dashboard Integration & Username Sniper
 Provides a selfbot that works with the web dashboard
 """
 
@@ -10,6 +10,9 @@ import aiohttp
 import os
 from datetime import datetime
 import logging
+import json
+import requests
+from typing import Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +26,133 @@ DASHBOARD_PASSWORD = os.getenv('DASHBOARD_PASSWORD', 'admin123')
 if not USER_TOKEN:
     raise ValueError("USER_TOKEN environment variable not set!")
 
+class UsernameSniper:
+    """Handles username sniping and auto-claiming"""
+    
+    def __init__(self, client):
+        self.client = client
+        self.snipe_list = []
+        self.claimed_history = []
+        self.webhook_url = None
+        self.auto_claim_enabled = False
+        self.load_sniper_config()
+    
+    def load_sniper_config(self):
+        """Load sniper configuration from file"""
+        try:
+            if os.path.exists('sniper_config.json'):
+                with open('sniper_config.json', 'r') as f:
+                    config = json.load(f)
+                    self.snipe_list = config.get('snipe_list', [])
+                    self.webhook_url = config.get('webhook_url')
+                    self.auto_claim_enabled = config.get('auto_claim_enabled', False)
+        except Exception as e:
+            logger.error(f"Error loading sniper config: {e}")
+    
+    def save_sniper_config(self):
+        """Save sniper configuration to file"""
+        try:
+            config = {
+                'snipe_list': self.snipe_list,
+                'webhook_url': self.webhook_url,
+                'auto_claim_enabled': self.auto_claim_enabled
+            }
+            with open('sniper_config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving sniper config: {e}")
+    
+    async def claim_username(self, username: str) -> bool:
+        """Attempt to claim a username"""
+        try:
+            await self.client.user.edit(username=username)
+            logger.info(f"Successfully claimed username: {username}")
+            
+            # Add to history
+            self.claimed_history.append({
+                'username': username,
+                'claimed_at': datetime.now().isoformat(),
+                'status': 'success'
+            })
+            
+            # Send webhook notification
+            await self.send_webhook_notification(
+                f"✅ Successfully claimed username: **{username}**",
+                color=0x43b581
+            )
+            
+            return True
+        except discord.errors.HTTPException as e:
+            logger.error(f"Failed to claim username {username}: {e}")
+            
+            # Add failed attempt to history
+            self.claimed_history.append({
+                'username': username,
+                'claimed_at': datetime.now().isoformat(),
+                'status': 'failed',
+                'error': str(e)
+            })
+            
+            # Send webhook notification
+            await self.send_webhook_notification(
+                f"❌ Failed to claim username: **{username}**\nError: {str(e)}",
+                color=0xf04747
+            )
+            
+            return False
+    
+    async def send_webhook_notification(self, message: str, color: int = 0x7289da):
+        """Send notification to webhook"""
+        if not self.webhook_url:
+            return
+        
+        try:
+            embed = {
+                "title": "🎯 Username Sniper Alert",
+                "description": message,
+                "color": color,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            payload = {
+                "embeds": [embed],
+                "username": "Discord Selfbot Sniper"
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.webhook_url, json=payload) as resp:
+                    if resp.status == 204:
+                        logger.info("Webhook notification sent successfully")
+        except Exception as e:
+            logger.error(f"Error sending webhook notification: {e}")
+    
+    def add_to_snipe_list(self, username: str):
+        """Add username to snipe list"""
+        if username not in self.snipe_list:
+            self.snipe_list.append(username)
+            self.save_sniper_config()
+            return True
+        return False
+    
+    def remove_from_snipe_list(self, username: str):
+        """Remove username from snipe list"""
+        if username in self.snipe_list:
+            self.snipe_list.remove(username)
+            self.save_sniper_config()
+            return True
+        return False
+    
+    def set_webhook_url(self, url: str):
+        """Set webhook URL for notifications"""
+        self.webhook_url = url
+        self.save_sniper_config()
+    
+    def toggle_auto_claim(self):
+        """Toggle auto-claim feature"""
+        self.auto_claim_enabled = not self.auto_claim_enabled
+        self.save_sniper_config()
+        return self.auto_claim_enabled
+
 class SelfbotDashboard(commands.Cog):
     """Cog to handle dashboard integration"""
     
@@ -31,6 +161,7 @@ class SelfbotDashboard(commands.Cog):
         self.messages_sent = 0
         self.commands_executed = 0
         self.start_time = datetime.now()
+        self.sniper = UsernameSniper(client)
         self.sync_stats.start()
     
     @tasks.loop(seconds=10)
@@ -45,7 +176,9 @@ class SelfbotDashboard(commands.Cog):
                 'messages_sent': self.messages_sent,
                 'commands_executed': self.commands_executed,
                 'guild_count': len(self.client.guilds),
-                'friend_count': len(self.client.user.relationships) if hasattr(self.client.user, 'relationships') else 0
+                'friend_count': len(self.client.user.relationships) if hasattr(self.client.user, 'relationships') else 0,
+                'sniper_claimed': len(self.sniper.claimed_history),
+                'sniper_active': self.sniper.auto_claim_enabled
             }
             
             async with aiohttp.ClientSession() as session:
@@ -84,6 +217,7 @@ class Selfbot(discord.Client):
             'help': self.cmd_help,
             'echo': self.cmd_echo,
             'user': self.cmd_user,
+            'snipe': self.cmd_snipe,
         }
     
     async def on_ready(self):
@@ -153,6 +287,7 @@ class Selfbot(discord.Client):
             f"{self.commands_prefix}dm [@user] [message] - Send DM\n"
             f"{self.commands_prefix}echo [text] - Echo text\n"
             f"{self.commands_prefix}user [@user] - Get user info\n"
+            f"{self.commands_prefix}snipe [username] - Claim username\n"
             f"{self.commands_prefix}help - Show this message"
         )
         await self.send_response(message, help_text)
@@ -232,6 +367,24 @@ class Selfbot(discord.Client):
         except Exception as e:
             await self.send_response(message, f"Error: {str(e)}")
     
+    async def cmd_snipe(self, message, args):
+        """Claim or manage username sniping"""
+        if not self.dashboard:
+            await self.send_response(message, "Sniper not initialized")
+            return
+        
+        sniper = self.dashboard.sniper
+        
+        if not args:
+            await self.send_response(message, "Usage: .snipe [username]")
+            return
+        
+        try:
+            await sniper.claim_username(args)
+            await self.send_response(message, f"Attempting to claim: {args}")
+        except Exception as e:
+            await self.send_response(message, f"Snipe error: {str(e)}")
+    
     # ============== UTILITY METHODS ==============
     
     async def send_response(self, original_message, response_text):
@@ -252,10 +405,10 @@ class Selfbot(discord.Client):
 def main():
     """Start the selfbot"""
     print("""
-    ╔════════════════════════════════════════╗
-    ║  Discord Selfbot with Dashboard        ║
-    ║  Starting...                            ║
-    ╚════════════════════════════════════════╝
+    ╔══════��═════════════════════════════════════╗
+    ║  Discord Selfbot with Username Sniper      ║
+    ║  Starting...                                ║
+    ╚════════════════════════════════════════════╝
     """)
     
     # Create selfbot instance

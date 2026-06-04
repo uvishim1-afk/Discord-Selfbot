@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Discord Selfbot Dashboard Server
+Discord Selfbot Dashboard Server with Username Sniper
 Provides REST API for the web dashboard to control the selfbot
-Optimized for Railway deployment
+Optimized for Render deployment
 """
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -23,7 +23,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Configuration from environment variables
 DASHBOARD_PASSWORD = os.getenv('DASHBOARD_PASSWORD', 'admin123')
-BOT_TOKEN = os.getenv('DISCORD_TOKEN', '')
+BOT_TOKEN = os.getenv('USER_TOKEN', '')
 BOT_FILE = os.getenv('BOT_FILE_PATH', 'selfbot.py')
 PORT = int(os.getenv('DASHBOARD_PORT', 5000))
 HOST = os.getenv('DASHBOARD_HOST', '0.0.0.0')
@@ -35,7 +35,14 @@ BOT_STATS = {
     'messages_sent': 0,
     'commands_executed': 0,
     'guild_count': 0,
-    'friend_count': 0
+    'friend_count': 0,
+    'sniper_claimed': 0,
+    'sniper_active': False
+}
+SNIPER_CONFIG = {
+    'snipe_list': [],
+    'webhook_url': '',
+    'auto_claim_enabled': False
 }
 LOGS = []
 
@@ -144,6 +151,112 @@ def get_server_info():
         add_log(f'Error getting server info: {str(e)}', 'ERROR')
         return jsonify({'error': str(e)}), 500
 
+# ============== USERNAME SNIPER ENDPOINTS ==============
+
+@app.route('/api/sniper/config', methods=['GET'])
+@require_auth
+def get_sniper_config():
+    """Get sniper configuration"""
+    return jsonify(SNIPER_CONFIG)
+
+@app.route('/api/sniper/config', methods=['POST'])
+@require_auth
+def update_sniper_config():
+    """Update sniper configuration"""
+    global SNIPER_CONFIG
+    data = request.get_json()
+    
+    try:
+        SNIPER_CONFIG.update(data)
+        
+        # Save to file
+        with open('sniper_config.json', 'w') as f:
+            json.dump(SNIPER_CONFIG, f, indent=4)
+        
+        add_log('Sniper config updated', 'INFO')
+        return jsonify({'success': True, 'config': SNIPER_CONFIG})
+    except Exception as e:
+        add_log(f'Error updating sniper config: {str(e)}', 'ERROR')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sniper/snipe-list', methods=['GET'])
+@require_auth
+def get_snipe_list():
+    """Get snipe list"""
+    return jsonify({'snipe_list': SNIPER_CONFIG.get('snipe_list', [])})
+
+@app.route('/api/sniper/snipe-list/add', methods=['POST'])
+@require_auth
+def add_to_snipe_list():
+    """Add username to snipe list"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    
+    if not username:
+        return jsonify({'error': 'Username required'}), 400
+    
+    if username not in SNIPER_CONFIG['snipe_list']:
+        SNIPER_CONFIG['snipe_list'].append(username)
+        
+        # Save to file
+        with open('sniper_config.json', 'w') as f:
+            json.dump(SNIPER_CONFIG, f, indent=4)
+        
+        add_log(f'Added {username} to snipe list', 'INFO')
+        return jsonify({'success': True, 'snipe_list': SNIPER_CONFIG['snipe_list']})
+    
+    return jsonify({'error': 'Username already in list'}), 400
+
+@app.route('/api/sniper/snipe-list/remove', methods=['POST'])
+@require_auth
+def remove_from_snipe_list():
+    """Remove username from snipe list"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    
+    if username in SNIPER_CONFIG['snipe_list']:
+        SNIPER_CONFIG['snipe_list'].remove(username)
+        
+        # Save to file
+        with open('sniper_config.json', 'w') as f:
+            json.dump(SNIPER_CONFIG, f, indent=4)
+        
+        add_log(f'Removed {username} from snipe list', 'INFO')
+        return jsonify({'success': True, 'snipe_list': SNIPER_CONFIG['snipe_list']})
+    
+    return jsonify({'error': 'Username not in list'}), 400
+
+@app.route('/api/sniper/webhook', methods=['POST'])
+@require_auth
+def set_webhook_url():
+    """Set webhook URL for notifications"""
+    data = request.get_json()
+    webhook_url = data.get('webhook_url', '').strip()
+    
+    SNIPER_CONFIG['webhook_url'] = webhook_url
+    
+    # Save to file
+    with open('sniper_config.json', 'w') as f:
+        json.dump(SNIPER_CONFIG, f, indent=4)
+    
+    add_log(f'Webhook URL updated', 'INFO')
+    return jsonify({'success': True, 'webhook_url': webhook_url})
+
+@app.route('/api/sniper/toggle', methods=['POST'])
+@require_auth
+def toggle_auto_claim():
+    """Toggle auto-claim feature"""
+    SNIPER_CONFIG['auto_claim_enabled'] = not SNIPER_CONFIG.get('auto_claim_enabled', False)
+    
+    # Save to file
+    with open('sniper_config.json', 'w') as f:
+        json.dump(SNIPER_CONFIG, f, indent=4)
+    
+    status = 'enabled' if SNIPER_CONFIG['auto_claim_enabled'] else 'disabled'
+    add_log(f'Auto-claim {status}', 'INFO')
+    
+    return jsonify({'success': True, 'enabled': SNIPER_CONFIG['auto_claim_enabled']})
+
 # Bot Control Endpoints
 @app.route('/api/bot/start', methods=['POST'])
 @require_auth
@@ -155,7 +268,7 @@ def start_bot():
         return jsonify({'error': 'Bot is already running'}), 400
     
     if not BOT_TOKEN:
-        add_log('Cannot start bot: DISCORD_TOKEN not set', 'ERROR')
+        add_log('Cannot start bot: USER_TOKEN not set', 'ERROR')
         return jsonify({'error': 'Discord token not configured'}), 400
     
     try:
@@ -164,7 +277,7 @@ def start_bot():
             ['python', BOT_FILE],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, 'DISCORD_TOKEN': BOT_TOKEN}
+            env={**os.environ, 'USER_TOKEN': BOT_TOKEN}
         )
         BOT_RUNNING = True
         BOT_START_TIME = datetime.now()
@@ -209,72 +322,13 @@ def get_commands():
         {'name': 'help', 'description': 'Display help information'},
         {'name': 'ping', 'description': 'Check bot latency'},
         {'name': 'status', 'description': 'Get bot status'},
-        {'name': 'stats', 'description': 'Display bot statistics'},
         {'name': 'clear', 'description': 'Clear messages from chat'},
         {'name': 'dm', 'description': 'Send a direct message'},
-        {'name': 'spam', 'description': 'Spam messages (use with caution)'},
+        {'name': 'echo', 'description': 'Echo text'},
+        {'name': 'user', 'description': 'Get user information'},
+        {'name': 'snipe', 'description': 'Claim a username'},
     ]
     return jsonify({'commands': commands})
-
-# Messaging Endpoint
-@app.route('/api/bot/send-message', methods=['POST'])
-@require_auth
-def send_message():
-    """Send a message through the bot"""
-    data = request.get_json()
-    channel_id = data.get('channel_id')
-    message = data.get('message')
-    
-    if not channel_id or not message:
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    try:
-        BOT_STATS['messages_sent'] += 1
-        add_log(f'Message sent to channel {channel_id}: {message[:50]}...', 'INFO')
-        return jsonify({
-            'success': True,
-            'message': 'Message sent',
-            'channel_id': channel_id,
-            'sent_at': datetime.now().isoformat()
-        })
-    except Exception as e:
-        add_log(f'Error sending message: {str(e)}', 'ERROR')
-        return jsonify({'error': str(e)}), 500
-
-# Settings Endpoint
-@app.route('/api/bot/settings', methods=['GET'])
-@require_auth
-def get_settings():
-    """Get bot settings"""
-    try:
-        if os.path.exists('bot_settings.json'):
-            with open('bot_settings.json', 'r') as f:
-                return jsonify(json.load(f))
-        return jsonify({'prefix': '.', 'auto_start': False, 'debug_mode': False})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/bot/settings', methods=['POST'])
-@require_auth
-def save_settings():
-    """Save bot settings"""
-    data = request.get_json()
-    
-    try:
-        settings = {
-            'prefix': data.get('prefix', '.'),
-            'auto_start': data.get('auto_start', False),
-            'debug_mode': data.get('debug_mode', False)
-        }
-        
-        with open('bot_settings.json', 'w') as f:
-            json.dump(settings, f, indent=4)
-        
-        add_log('Settings saved', 'INFO')
-        return jsonify({'success': True, 'message': 'Settings saved'})
-    except Exception as e:
-        add_log(f'Error saving settings: {str(e)}', 'ERROR')
-        return jsonify({'error': str(e)}), 500
 
 # Logs Endpoints
 @app.route('/api/bot/logs', methods=['GET'])
@@ -301,7 +355,8 @@ def health_check():
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'bot_running': BOT_RUNNING,
-        'version': '1.0.0'
+        'version': '1.1.0',
+        'features': ['selfbot', 'dashboard', 'username_sniper']
     })
 
 # Error handlers
@@ -317,6 +372,7 @@ def server_error(error):
 if __name__ == '__main__':
     add_log('=' * 50, 'INFO')
     add_log('Discord Selfbot Dashboard Server Starting', 'INFO')
+    add_log('Features: Selfbot Control + Username Sniper', 'INFO')
     add_log('=' * 50, 'INFO')
     add_log(f'Host: {HOST}', 'INFO')
     add_log(f'Port: {PORT}', 'INFO')
@@ -325,11 +381,12 @@ if __name__ == '__main__':
     
     print(f"\n{chr(27)}[1;32m")
     print("\n" + "="*60)
-    print("  Discord Selfbot Dashboard - Railway Edition")
+    print("  Discord Selfbot Dashboard - Render Edition")
+    print("  with Username Sniper & Auto-Claim")
     print("="*60)
     print(f"  🌐 URL: http://{HOST}:{PORT}")
-    print(f"  🔑 Default Password: {DASHBOARD_PASSWORD}")
-    print(f"  🤖 Bot Token: {'SET' if BOT_TOKEN else 'NOT SET'}")
+    print(f"  🔐 Default Password: {DASHBOARD_PASSWORD}")
+    print(f"  🤖 Selfbot Token: {'SET' if BOT_TOKEN else 'NOT SET'}")
     print("="*60 + "\n")
     print(f"{chr(27)}[0m")
     
