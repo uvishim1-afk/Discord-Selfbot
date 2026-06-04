@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Selfbot Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>🤖 Selfbot</h2>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#" class="nav-link active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="#" class="nav-link" data-page="status">Bot Status</a></li>
+                <li><a href="#" class="nav-link" data-page="commands">Commands</a></li>
+                <li><a href="#" class="nav-link" data-page="messages">Messages</a></li>
+                <li><a href="#" class="nav-link" data-page="settings">Settings</a></li>
+                <li><a href="#" class="nav-link" data-page="logs">Logs</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <button class="btn-logout" id="logoutBtn">Logout</button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <h1 id="pageTitle">Dashboard</h1>
+                <div class="header-right">
+                    <span class="user-info" id="userInfo">User</span>
+                    <button class="menu-toggle" id="menuToggle">☰</button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Dashboard Page -->
+                <div id="dashboard" class="page active">
+                    <div class="grid">
+                        <!-- Status Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Bot Status</h3>
+                                <span class="status-badge" id="statusBadge">Offline</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="status-info">
+                                    <p><strong>Status:</strong> <span id="botStatus">Offline</span></p>
+                                    <p><strong>Uptime:</strong> <span id="botUptime">0h 0m</span></p>
+                                    <p><strong>Latency:</strong> <span id="botLatency">-- ms</span></p>
+                                </div>
+                                <div class="button-group">
+                                    <button class="btn btn-primary" id="startBtn">Start Bot</button>
+                                    <button class="btn btn-danger" id="stopBtn">Stop Bot</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Stats -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Quick Stats</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="stat-item">
+                                    <span class="stat-label">Messages Sent</span>
+                                    <span class="stat-value" id="messagesSent">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Commands Executed</span>
+                                    <span class="stat-value" id="commandsExecuted">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Guilds</span>
+                                    <span class="stat-value" id="guildCount">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Friends</span>
+                                    <span class="stat-value" id="friendCount">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Server Info -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Server Info</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="stat-item">
+                                    <span class="stat-label">CPU Usage</span>
+                                    <div class="progress-bar">
+                                        <div class="progress" id="cpuUsage" style="width: 0%"></div>
+                                    </div>
+                                    <span class="stat-value" id="cpuPercent">0%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Memory Usage</span>
+                                    <div class="progress-bar">
+                                        <div class="progress" id="memUsage" style="width: 0%"></div>
+                                    </div>
+                                    <span class="stat-value" id="memPercent">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bot Status Page -->
+                <div id="status" class="page">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Detailed Bot Status</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="info-table">
+                                <tr>
+                                    <td><strong>Bot Name:</strong></td>
+                                    <td id="botName">Loading...</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>User ID:</strong></td>
+                                    <td id="botId">Loading...</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Status:</strong></td>
+                                    <td id="detailedStatus">Loading...</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Activity:</strong></td>
+                                    <td id="botActivity">Loading...</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Connected Since:</strong></td>
+                                    <td id="connectedSince">Loading...</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Commands Page -->
+                <div id="commands" class="page">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Available Commands</h3>
+                            <input type="text" placeholder="Search commands..." id="commandSearch" class="search-box">
+                        </div>
+                        <div class="card-body">
+                            <div id="commandsList" class="commands-list">
+                                <p>Loading commands...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages Page -->
+                <div id="messages" class="page">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Send Message</h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="messageForm">
+                                <div class="form-group">
+                                    <label for="channelId">Channel ID:</label>
+                                    <input type="text" id="channelId" placeholder="Enter channel ID" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="messageText">Message:</label>
+                                    <textarea id="messageText" placeholder="Enter message" rows="5" required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Send Message</button>
+                            </form>
+                            <div id="messageHistory" class="message-history" style="margin-top: 20px;">
+                                <h4>Recent Messages</h4>
+                                <div id="historyList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Page -->
+                <div id="settings" class="page">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Bot Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="settingsForm">
+                                <div class="form-group">
+                                    <label for="prefix">Command Prefix:</label>
+                                    <input type="text" id="prefix" placeholder="Enter prefix" maxlength="5">
+                                </div>
+                                <div class="form-group">
+                                    <label for="token">Bot Token:</label>
+                                    <input type="password" id="token" placeholder="Enter bot token">
+                                    <small>Keep your token safe and never share it</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="autoStart"> Auto-start Bot on Server Restart
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="debugMode"> Enable Debug Mode
+                                    </label>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Save Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logs Page -->
+                <div id="logs" class="page">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Bot Logs</h3>
+                            <button class="btn btn-small" id="clearLogs">Clear Logs</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="logsList" class="logs-container">
+                                <p>Waiting for logs...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal active">
+        <div class="modal-content">
+            <h2>Discord Selfbot Dashboard</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="password">Dashboard Password:</label>
+                    <input type="password" id="password" placeholder="Enter password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
