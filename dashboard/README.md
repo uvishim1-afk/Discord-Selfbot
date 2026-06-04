@@ -1,151 +1,164 @@
-# Discord Selfbot Dashboard
+# Discord Selfbot Dashboard - Railway Edition
 
-A web-based dashboard for controlling your Discord selfbot. This dashboard provides a clean, mobile-friendly interface to manage your selfbot remotely.
+A complete web-based dashboard for controlling your Discord selfbot hosted on Railway.
 
-## Features
+## 🚀 Quick Start with Railway
+
+### Step 1: Create a Railway Account
+1. Go to [railway.app](https://railway.app)
+2. Sign up with GitHub
+3. Create a new project
+
+### Step 2: Deploy from GitHub
+1. Click "New Project" → "Deploy from GitHub repo"
+2. Select your `Discord-Selfbot` repository
+3. Railway will auto-detect the Dockerfile and deploy
+
+### Step 3: Set Environment Variables
+In Railway project settings, add:
+
+```
+DISCORD_TOKEN=your_discord_token_here
+DASHBOARD_PASSWORD=your_secure_password
+DASHBOARD_HOST=0.0.0.0
+DASHBOARD_PORT=5000
+FLASK_ENV=production
+```
+
+### Step 4: Deploy
+Railway will automatically deploy your app. Your dashboard will be available at:
+```
+https://your-project-name.up.railway.app
+```
+
+## 📋 Features
 
 ✅ **Dashboard Overview**
-- Real-time bot status monitoring
-- Quick statistics (messages sent, commands executed, guilds, friends)
-- Server resource usage (CPU, memory)
+- Real-time bot status
+- Statistics (messages, commands, guilds)
+- Server resources (CPU, memory)
 
 ✅ **Bot Control**
-- Start/stop bot from dashboard
-- Monitor bot uptime and latency
+- Start/stop bot remotely
+- Monitor uptime & latency
 
 ✅ **Command Management**
-- View all available commands
-- Search and filter commands
+- View all commands
+- Search & filter
 
 ✅ **Messaging**
-- Send messages through bot
-- View message history
+- Send messages via bot
+- Message history
 
 ✅ **Settings**
-- Configure command prefix
-- Update bot token
-- Set auto-start options
-- Enable debug mode
+- Configure prefix
+- Update token
+- Debug mode
 
 ✅ **Logging**
-- Real-time bot logs
-- Color-coded log levels
-- Clear logs functionality
+- Real-time logs
+- Color-coded levels
+- Clear logs
 
-✅ **Responsive Design**
-- Works perfectly on desktop, tablet, and mobile
-- Dark theme (Discord-inspired)
-- Fast and lightweight
+✅ **Mobile Responsive**
+- Works on all devices
+- Dark theme (Discord-style)
 
-## Setup Instructions
+## 🔐 Security
 
-### 1. Install Dependencies
+### Important:
+1. **Change default password immediately**
+2. **Keep bot token secure** - never share it
+3. **Use strong passwords** (12+ characters)
+4. **Enable HTTPS** (Railway does this automatically)
 
-```bash
-pip install -r requirements-dashboard.txt
-```
-
-### 2. Start the Dashboard Server
-
-```bash
-python3 dashboard_server.py
-```
-
-The server will start on `http://localhost:5000`
-
-### 3. Access the Dashboard
-
-Open your browser and navigate to:
-```
-http://localhost:5000/dashboard
-```
-
-### 4. Login
-
-Default password: `admin123`
-
-**Important:** Change this password immediately!
-
-To change the password, set the environment variable:
-```bash
-export DASHBOARD_PASSWORD="your_secure_password"
-```
-
-## Configuration
+## 🛠️ Configuration
 
 ### Environment Variables
 
-```bash
-# Dashboard password (required)
-DASHBOARD_PASSWORD=your_secure_password
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DISCORD_TOKEN` | Yes | - | Your Discord bot token |
+| `DASHBOARD_PASSWORD` | No | admin123 | Dashboard login password |
+| `DASHBOARD_HOST` | No | 0.0.0.0 | Server host |
+| `DASHBOARD_PORT` | No | 5000 | Server port |
+| `FLASK_ENV` | No | production | Flask environment |
 
-# Discord bot token (optional if using selfbot)
-DISCORD_TOKEN=your_bot_token
+## 📱 Mobile Support
 
-# Server host and port
-DASHBOARD_HOST=0.0.0.0
-DASHBOARD_PORT=5000
-```
+The dashboard is fully responsive:
+- ✅ Desktop (Chrome, Firefox, Safari, Edge)
+- ✅ Tablets (iPad, Android)
+- ✅ Mobile phones (iPhone, Android)
 
-### Using with Your Selfbot
-
-The dashboard is designed to work alongside your existing selfbot. To integrate:
-
-1. Make sure your selfbot is running or can be started via the dashboard
-2. Update the bot file path in `dashboard_server.py` if needed
-3. The dashboard will communicate with your bot via the API endpoints
-
-## API Endpoints
+## 🔗 API Endpoints
 
 ### Bot Status
 ```
-GET /api/bot/status
-POST /api/bot/start
-POST /api/bot/stop
+GET  /api/bot/status        - Get bot status
+POST /api/bot/start         - Start bot
+POST /api/bot/stop          - Stop bot
 ```
 
 ### Statistics
 ```
-GET /api/bot/stats
-GET /api/server/info
+GET  /api/bot/stats         - Get bot stats
+POST /api/bot/stats         - Update bot stats
+GET  /api/server/info       - Get server info
 ```
 
-### Commands
+### Management
 ```
-GET /api/bot/commands
-```
-
-### Messaging
-```
-POST /api/bot/send-message
-```
-
-### Settings
-```
-POST /api/bot/settings
+GET  /api/bot/commands      - Get commands
+POST /api/bot/send-message  - Send message
+GET  /api/bot/settings      - Get settings
+POST /api/bot/settings      - Save settings
 ```
 
 ### Logs
 ```
-GET /api/bot/logs
-POST /api/bot/logs/clear
+GET  /api/bot/logs          - Get logs
+POST /api/bot/logs/clear    - Clear logs
 ```
 
-## Connecting to Your Selfbot
+### Health
+```
+GET  /api/health            - Health check
+```
 
-To integrate the dashboard with your existing Discord selfbot:
+## 🐛 Troubleshooting
 
-### For discord.py Selfbots
+### Dashboard won't load
+1. Check Railway deployment status
+2. Verify environment variables are set
+3. Check project logs in Railway dashboard
 
-Add this to your selfbot code to connect it with the dashboard API:
+### Can't login
+1. Check `DASHBOARD_PASSWORD` environment variable
+2. Try refreshing the page
+3. Clear browser cache
+
+### Bot won't start
+1. Verify `DISCORD_TOKEN` is set correctly
+2. Check bot file path in `dashboard_server.py`
+3. Check Railway logs for errors
+
+### CORS errors
+1. Railway handles CORS automatically
+2. Try clearing browser cache
+3. Try a different browser
+
+## 📝 Connecting Your Selfbot
+
+To integrate with discord.py selfbot:
 
 ```python
 import aiohttp
 
-class DashboardIntegration:
-    def __init__(self, bot):
+class DashboardClient:
+    def __init__(self, bot, dashboard_url):
         self.bot = bot
-        self.api_url = "http://localhost:5000/api"
+        self.dashboard_url = dashboard_url
     
     async def update_stats(self):
         stats = {
@@ -157,113 +170,44 @@ class DashboardIntegration:
         
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{self.api_url}/bot/stats",
+                f"{self.dashboard_url}/api/bot/stats",
                 json=stats
             ) as resp:
                 return await resp.json()
 ```
 
-## Mobile Support
+## 🚢 Deployment Tips
 
-The dashboard is fully responsive and works on:
-- ✅ Desktop (Chrome, Firefox, Safari, Edge)
-- ✅ Tablets (iPad, Android tablets)
-- ✅ Mobile phones (iPhone, Android)
+### Auto-redeploy on Push
+Railway automatically redeploys when you push to GitHub. Just:
+1. Make changes
+2. Git push to your repository
+3. Railway redeploys automatically
 
-The sidebar automatically collapses on mobile for better space usage.
+### Scaling
+Railway automatically handles traffic. For high load:
+1. Go to Railway project settings
+2. Increase "Memory" and "vCPU" as needed
+3. Changes apply immediately
 
-## Security Notes
+### Monitoring
+In Railway dashboard:
+- View real-time logs
+- Monitor CPU/memory usage
+- Check deployment status
+- View network activity
 
-⚠️ **Important Security Tips:**
+## 📞 Support
 
-1. **Change the default password immediately**
-2. **Use HTTPS in production** (add SSL certificate)
-3. **Keep your bot token secure** - never share it
-4. **Use strong passwords** (min 12 characters)
-5. **Run behind a reverse proxy** (nginx, Apache) in production
-6. **Restrict IP access** if possible
-7. **Use environment variables** for sensitive data
+For issues:
+1. Check the [troubleshooting](#-troubleshooting) section
+2. View logs in Railway dashboard
+3. Open an issue on GitHub
 
-## Troubleshooting
-
-### Dashboard won't start
-- Make sure port 5000 is not in use
-- Check if Flask is installed: `pip install flask flask-cors`
-
-### Can't connect to bot
-- Ensure your selfbot is running
-- Check the bot file path in `dashboard_server.py`
-- Verify the bot token is correct
-
-### CORS errors
-- Make sure Flask-CORS is installed
-- Check that the API_URL in `app.js` matches your server URL
-
-### Mobile layout issues
-- Try refreshing the page
-- Clear browser cache
-- Test on a different device/browser
-
-## File Structure
-
-```
-dashboard/
-├── index.html          # Main HTML file
-├── styles.css          # Styling
-├── app.js              # Frontend JavaScript
-└── README.md           # This file
-
-dashboard_server.py     # Flask API server
-requirements-dashboard.txt
-```
-
-## Advanced Setup
-
-### Running Behind Nginx (Production)
-
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### Docker Support (Optional)
-
-Create a `Dockerfile`:
-
-```dockerfile
-FROM python:3.10
-
-WORKDIR /app
-COPY requirements-dashboard.txt .
-RUN pip install -r requirements-dashboard.txt
-COPY . .
-
-EXPOSE 5000
-CMD ["python", "dashboard_server.py"]
-```
-
-Build and run:
-```bash
-docker build -t selfbot-dashboard .
-docker run -p 5000:5000 selfbot-dashboard
-```
-
-## Contributing
-
-Feel free to submit issues and enhancement requests!
-
-## License
+## 📄 License
 
 GNU General Public License v3.0
 
-## Support
+---
 
-For issues and questions, please open an issue on GitHub.
+**Happy botting!** 🤖

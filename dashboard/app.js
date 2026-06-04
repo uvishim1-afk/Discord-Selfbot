@@ -1,7 +1,8 @@
 // API Configuration
-const API_URL = 'http://localhost:5000/api';
+const API_URL = window.location.origin + '/api';
 let authToken = null;
 let botConnected = false;
+let refreshInterval = null;
 
 // Initialize App
 document.addEventListener('DOMContentLoaded', () => {
@@ -28,6 +29,9 @@ function setupEventListeners() {
             switchPage(page);
             document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
             link.classList.add('active');
+            
+            // Close mobile menu
+            document.querySelector('.sidebar')?.classList.remove('active');
         });
     });
 
@@ -35,6 +39,15 @@ function setupEventListeners() {
     const menuToggle = document.getElementById('menuToggle');
     menuToggle?.addEventListener('click', () => {
         document.querySelector('.sidebar').classList.toggle('active');
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        const sidebar = document.querySelector('.sidebar');
+        const menuToggle = document.getElementById('menuToggle');
+        if (sidebar && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+            sidebar.classList.remove('active');
+        }
     });
 
     // Login Form
@@ -78,24 +91,37 @@ function setupEventListeners() {
 
 // Authentication
 function attemptLogin(password) {
-    const defaultPassword = 'admin123'; // Change this to your own password
+    const passwordHash = btoa(password);
     
-    if (password === defaultPassword) {
-        authToken = btoa(password);
+    // Test the password with a simple API call
+    fetch(`${API_URL}/health`, {
+        headers: { 'Authorization': passwordHash }
+    })
+    .then(r => {
+        if (r.status === 401) {
+            showNotification('Invalid password', 'error');
+            return;
+        }
+        authToken = passwordHash;
         localStorage.setItem('dashboardAuth', authToken);
         document.getElementById('loginModal').classList.remove('active');
         showMainDashboard();
         showNotification('Login successful!', 'success');
-    } else {
-        showNotification('Invalid password', 'error');
-    }
+    })
+    .catch(err => {
+        showNotification('Connection error', 'error');
+        console.error('Login error:', err);
+    });
 }
 
 function logout() {
-    localStorage.removeItem('dashboardAuth');
-    authToken = null;
-    showLoginModal();
-    showNotification('Logged out successfully', 'info');
+    if (confirm('Are you sure you want to logout?')) {
+        localStorage.removeItem('dashboardAuth');
+        authToken = null;
+        if (refreshInterval) clearInterval(refreshInterval);
+        showLoginModal();
+        showNotification('Logged out successfully', 'info');
+    }
 }
 
 // UI Functions
@@ -114,7 +140,8 @@ function showMainDashboard() {
 function switchPage(pageName) {
     document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
     document.getElementById(pageName)?.classList.add('active');
-    document.getElementById('pageTitle').textContent = pageName.charAt(0).toUpperCase() + pageName.slice(1);
+    document.getElementById('pageTitle').textContent = 
+        pageName.charAt(0).toUpperCase() + pageName.slice(1);
     
     // Load page-specific data
     if (pageName === 'status') loadBotStatus();
@@ -155,7 +182,11 @@ function loadBotStatus() {
     })
     .catch(err => {
         console.error('Error loading bot status:', err);
-        document.getElementById('statusBadge').textContent = 'ERROR';
+        const badge = document.getElementById('statusBadge');
+        if (badge) {
+            badge.textContent = 'ERROR';
+            badge.className = 'status-badge offline';
+        }
     });
 }
 
@@ -222,7 +253,10 @@ function loadCommands() {
     })
     .catch(err => {
         console.error('Error loading commands:', err);
-        document.getElementById('commandsList').innerHTML = '<p>Failed to load commands</p>';
+        const commandsList = document.getElementById('commandsList');
+        if (commandsList) {
+            commandsList.innerHTML = '<p>Failed to load commands</p>';
+        }
     });
 }
 
@@ -244,7 +278,13 @@ function loadLogs() {
         });
         logsList.scrollTop = logsList.scrollHeight;
     })
-    .catch(err => console.error('Error loading logs:', err));
+    .catch(err => {
+        console.error('Error loading logs:', err);
+        const logsList = document.getElementById('logsList');
+        if (logsList) {
+            logsList.innerHTML = '<p>Failed to load logs</p>';
+        }
+    });
 }
 
 // Bot Control Functions
@@ -255,10 +295,17 @@ function startBot() {
     })
     .then(r => r.json())
     .then(data => {
-        showNotification('Bot starting...', 'info');
-        setTimeout(loadBotStatus, 1000);
+        if (data.success) {
+            showNotification('Bot starting...', 'info');
+            setTimeout(loadBotStatus, 2000);
+        } else {
+            showNotification(data.error || 'Error starting bot', 'error');
+        }
     })
-    .catch(err => showNotification('Error starting bot', 'error'));
+    .catch(err => {
+        showNotification('Error starting bot: ' + err.message, 'error');
+        console.error('Start bot error:', err);
+    });
 }
 
 function stopBot() {
@@ -269,10 +316,17 @@ function stopBot() {
         })
         .then(r => r.json())
         .then(data => {
-            showNotification('Bot stopping...', 'info');
-            setTimeout(loadBotStatus, 1000);
+            if (data.success) {
+                showNotification('Bot stopping...', 'info');
+                setTimeout(loadBotStatus, 2000);
+            } else {
+                showNotification(data.error || 'Error stopping bot', 'error');
+            }
         })
-        .catch(err => showNotification('Error stopping bot', 'error'));
+        .catch(err => {
+            showNotification('Error stopping bot: ' + err.message, 'error');
+            console.error('Stop bot error:', err);
+        });
     }
 }
 
@@ -296,11 +350,18 @@ function sendMessage() {
     })
     .then(r => r.json())
     .then(data => {
-        showNotification('Message sent!', 'success');
-        document.getElementById('messageForm').reset();
-        addMessageToHistory(channelId, messageText);
+        if (data.success) {
+            showNotification('Message sent!', 'success');
+            document.getElementById('messageForm').reset();
+            addMessageToHistory(channelId, messageText);
+        } else {
+            showNotification(data.error || 'Error sending message', 'error');
+        }
     })
-    .catch(err => showNotification('Error sending message', 'error'));
+    .catch(err => {
+        showNotification('Error sending message: ' + err.message, 'error');
+        console.error('Send message error:', err);
+    });
 }
 
 function addMessageToHistory(channelId, message) {
@@ -310,10 +371,15 @@ function addMessageToHistory(channelId, message) {
     const div = document.createElement('div');
     div.className = 'message-item';
     div.innerHTML = `
-        <strong>Channel ${channelId}:</strong> ${message}
+        <strong>Channel ${channelId}:</strong> ${escapeHtml(message)}
         <div class="message-time">${new Date().toLocaleTimeString()}</div>
     `;
     historyList.insertBefore(div, historyList.firstChild);
+    
+    // Keep only last 10 messages
+    while (historyList.children.length > 10) {
+        historyList.removeChild(historyList.lastChild);
+    }
 }
 
 // Settings Functions
@@ -330,15 +396,24 @@ function saveSettings() {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            prefix,
+            prefix: prefix || '.',
             token: token || undefined,
             auto_start: autoStart,
             debug_mode: debugMode
         })
     })
     .then(r => r.json())
-    .then(data => showNotification('Settings saved!', 'success'))
-    .catch(err => showNotification('Error saving settings', 'error'));
+    .then(data => {
+        if (data.success) {
+            showNotification('Settings saved!', 'success');
+        } else {
+            showNotification(data.error || 'Error saving settings', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('Error saving settings: ' + err.message, 'error');
+        console.error('Save settings error:', err);
+    });
 }
 
 // Utility Functions
@@ -347,7 +422,8 @@ function filterCommands(query) {
     items.forEach(item => {
         const name = item.querySelector('.command-name').textContent.toLowerCase();
         const desc = item.querySelector('.command-desc').textContent.toLowerCase();
-        item.style.display = name.includes(query.toLowerCase()) || desc.includes(query.toLowerCase()) ? 'block' : 'none';
+        const searchQuery = query.toLowerCase();
+        item.style.display = name.includes(searchQuery) || desc.includes(searchQuery) ? 'block' : 'none';
     });
 }
 
@@ -359,10 +435,17 @@ function clearLogs() {
         })
         .then(r => r.json())
         .then(data => {
-            showNotification('Logs cleared!', 'success');
-            loadLogs();
+            if (data.success) {
+                showNotification('Logs cleared!', 'success');
+                loadLogs();
+            } else {
+                showNotification(data.error || 'Error clearing logs', 'error');
+            }
         })
-        .catch(err => showNotification('Error clearing logs', 'error'));
+        .catch(err => {
+            showNotification('Error clearing logs: ' + err.message, 'error');
+            console.error('Clear logs error:', err);
+        });
     }
 }
 
@@ -385,7 +468,14 @@ function updateUserInfo(data) {
 function formatUptime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    const secs = seconds % 60;
+    return `${hours}h ${minutes}m ${secs}s`;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function showNotification(message, type = 'info') {
@@ -393,33 +483,52 @@ function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
+    
+    const bgColor = type === 'success' ? '#43b581' : type === 'error' ? '#f04747' : '#7289da';
+    
     notification.style.cssText = `
         position: fixed;
         bottom: 20px;
         right: 20px;
         padding: 15px 20px;
-        background-color: ${type === 'success' ? '#43b581' : type === 'error' ? '#f04747' : '#7289da'};
+        background-color: ${bgColor};
         color: white;
         border-radius: 4px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.3);
         z-index: 999;
         animation: slideIn 0.3s ease;
+        font-size: 14px;
+        max-width: 300px;
+        word-wrap: break-word;
     `;
     
     document.body.appendChild(notification);
+    
     setTimeout(() => {
         notification.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => notification.remove(), 300);
-    }, 3000);
+    }, 4000);
 }
 
 // Auto-refresh data
 function startDataRefresh() {
-    setInterval(() => {
-        if (botConnected) {
-            loadBotStatus();
+    // Clear any existing interval
+    if (refreshInterval) clearInterval(refreshInterval);
+    
+    // Set new interval
+    refreshInterval = setInterval(() => {
+        const currentPage = document.querySelector('.page.active')?.id;
+        
+        // Always refresh these
+        loadBotStatus();
+        
+        if (currentPage === 'dashboard') {
             loadStats();
             loadServerInfo();
+        } else if (currentPage === 'status') {
+            loadBotStatus();
+        } else if (currentPage === 'logs') {
+            loadLogs();
         }
     }, 5000); // Refresh every 5 seconds
 }
@@ -449,3 +558,8 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (refreshInterval) clearInterval(refreshInterval);
+});

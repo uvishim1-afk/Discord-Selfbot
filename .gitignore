@@ -1,16 +1,55 @@
-.google-cookie
-discord.log
-settings/*.json
-.idea/
-*~
-*__pycache__*
-*.json
-*.pyc
-*.dll
-custom_cogs/*
-settings/*
-!settings/*.sample
-cogs/utils/temp.txt
-settings_backup/*
-image_dump/*
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
 venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node modules
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+*.log.*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Settings
+bot_settings.json
+
+# Railway
+.railway/

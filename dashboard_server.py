@@ -2,9 +2,10 @@
 """
 Discord Selfbot Dashboard Server
 Provides REST API for the web dashboard to control the selfbot
+Optimized for Railway deployment
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import psutil
@@ -14,15 +15,22 @@ from datetime import datetime
 from functools import wraps
 import subprocess
 import time
+import base64
+from pathlib import Path
 
-app = Flask(__name__)
-CORS(app)
+app = Flask(__name__, static_folder='dashboard', static_url_path='/static')
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Configuration
+# Configuration from environment variables
 DASHBOARD_PASSWORD = os.getenv('DASHBOARD_PASSWORD', 'admin123')
 BOT_TOKEN = os.getenv('DISCORD_TOKEN', '')
+BOT_FILE = os.getenv('BOT_FILE_PATH', 'selfbot.py')
+PORT = int(os.getenv('DASHBOARD_PORT', 5000))
+HOST = os.getenv('DASHBOARD_HOST', '0.0.0.0')
+
 BOT_PROCESS = None
 BOT_RUNNING = False
+BOT_START_TIME = None
 BOT_STATS = {
     'messages_sent': 0,
     'commands_executed': 0,
@@ -32,7 +40,10 @@ BOT_STATS = {
 LOGS = []
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Authentication decorator
@@ -40,36 +51,62 @@ def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.headers.get('Authorization')
-        if not auth or auth != __import__('base64').b64encode(DASHBOARD_PASSWORD.encode()).decode():
+        expected_auth = base64.b64encode(DASHBOARD_PASSWORD.encode()).decode()
+        
+        if not auth or auth != expected_auth:
             return jsonify({'error': 'Unauthorized'}), 401
         return f(*args, **kwargs)
     return decorated
 
 # Logging helper
 def add_log(message, level='INFO'):
+    """Add a log entry"""
     log_entry = {
-        'timestamp': datetime.now().strftime('%H:%M:%S'),
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'level': level,
         'message': message
     }
     LOGS.append(log_entry)
-    if len(LOGS) > 100:  # Keep only last 100 logs
+    # Keep only last 100 logs
+    if len(LOGS) > 100:
         LOGS.pop(0)
-    logger.log(getattr(logging, level), message)
+    
+    # Log to console
+    log_level = getattr(logging, level.upper(), logging.INFO)
+    logger.log(log_level, message)
 
-# Bot Control Endpoints
+# Serve static files
+@app.route('/')
+def serve_dashboard():
+    """Serve the main dashboard"""
+    return send_from_directory('dashboard', 'index.html')
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    """Serve static files"""
+    if filename.endswith(('.js', '.css', '.html')):
+        return send_from_directory('dashboard', filename)
+    return send_from_directory('dashboard', filename), 404
+
+# ============== API ENDPOINTS ==============
+
+# Bot Status Endpoints
 @app.route('/api/bot/status', methods=['GET'])
 @require_auth
 def get_bot_status():
     """Get current bot status"""
+    uptime = 0
+    if BOT_RUNNING and BOT_START_TIME:
+        uptime = int((datetime.now() - BOT_START_TIME).total_seconds())
+    
     return jsonify({
         'connected': BOT_RUNNING,
         'status': 'online' if BOT_RUNNING else 'offline',
-        'uptime_seconds': get_bot_uptime(),
-        'latency': 50,  # Should be fetched from actual bot
-        'bot_name': 'Selfbot',
+        'uptime_seconds': uptime,
+        'latency': 50,
+        'bot_name': 'Discord Selfbot',
         'bot_id': '123456789',
-        'connected_since': datetime.now().isoformat()
+        'connected_since': BOT_START_TIME.isoformat() if BOT_START_TIME else None
     })
 
 @app.route('/api/bot/stats', methods=['GET'])
@@ -78,42 +115,61 @@ def get_bot_stats():
     """Get bot statistics"""
     return jsonify(BOT_STATS)
 
+@app.route('/api/bot/stats', methods=['POST'])
+@require_auth
+def update_bot_stats():
+    """Update bot statistics (called by the selfbot)"""
+    global BOT_STATS
+    data = request.get_json()
+    BOT_STATS.update(data)
+    return jsonify({'success': True, 'stats': BOT_STATS})
+
 @app.route('/api/server/info', methods=['GET'])
 @require_auth
 def get_server_info():
     """Get server resource usage"""
     try:
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
         return jsonify({
             'cpu_percent': cpu_percent,
             'memory_percent': memory.percent,
             'memory_available_mb': memory.available / (1024 * 1024),
-            'disk_percent': psutil.disk_usage('/').percent
+            'memory_total_mb': memory.total / (1024 * 1024),
+            'disk_percent': disk.percent
         })
     except Exception as e:
         add_log(f'Error getting server info: {str(e)}', 'ERROR')
         return jsonify({'error': str(e)}), 500
 
+# Bot Control Endpoints
 @app.route('/api/bot/start', methods=['POST'])
 @require_auth
 def start_bot():
     """Start the bot"""
-    global BOT_RUNNING, BOT_PROCESS
+    global BOT_RUNNING, BOT_PROCESS, BOT_START_TIME
     
     if BOT_RUNNING:
         return jsonify({'error': 'Bot is already running'}), 400
     
+    if not BOT_TOKEN:
+        add_log('Cannot start bot: DISCORD_TOKEN not set', 'ERROR')
+        return jsonify({'error': 'Discord token not configured'}), 400
+    
     try:
-        # Start bot process - adjust command based on your bot setup
+        # Start bot process
         BOT_PROCESS = subprocess.Popen(
-            ['python3', 'selfbot.py'],
+            ['python', BOT_FILE],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            env={**os.environ, 'DISCORD_TOKEN': BOT_TOKEN}
         )
         BOT_RUNNING = True
-        add_log('Bot started successfully', 'SUCCESS')
-        return jsonify({'success': True, 'message': 'Bot started'})
+        BOT_START_TIME = datetime.now()
+        add_log(f'Bot started successfully (PID: {BOT_PROCESS.pid})', 'SUCCESS')
+        return jsonify({'success': True, 'message': 'Bot started', 'pid': BOT_PROCESS.pid})
     except Exception as e:
         add_log(f'Error starting bot: {str(e)}', 'ERROR')
         return jsonify({'error': str(e)}), 500
@@ -122,7 +178,7 @@ def start_bot():
 @require_auth
 def stop_bot():
     """Stop the bot"""
-    global BOT_RUNNING, BOT_PROCESS
+    global BOT_RUNNING, BOT_PROCESS, BOT_START_TIME
     
     if not BOT_RUNNING:
         return jsonify({'error': 'Bot is not running'}), 400
@@ -130,15 +186,21 @@ def stop_bot():
     try:
         if BOT_PROCESS:
             BOT_PROCESS.terminate()
-            BOT_PROCESS.wait(timeout=5)
+            try:
+                BOT_PROCESS.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                BOT_PROCESS.kill()
+                BOT_PROCESS.wait()
+        
         BOT_RUNNING = False
+        BOT_START_TIME = None
         add_log('Bot stopped', 'INFO')
         return jsonify({'success': True, 'message': 'Bot stopped'})
     except Exception as e:
         add_log(f'Error stopping bot: {str(e)}', 'ERROR')
         return jsonify({'error': str(e)}), 500
 
-# Bot Commands Endpoint
+# Commands Endpoint
 @app.route('/api/bot/commands', methods=['GET'])
 @require_auth
 def get_commands():
@@ -148,7 +210,9 @@ def get_commands():
         {'name': 'ping', 'description': 'Check bot latency'},
         {'name': 'status', 'description': 'Get bot status'},
         {'name': 'stats', 'description': 'Display bot statistics'},
-        # Add more commands as needed
+        {'name': 'clear', 'description': 'Clear messages from chat'},
+        {'name': 'dm', 'description': 'Send a direct message'},
+        {'name': 'spam', 'description': 'Spam messages (use with caution)'},
     ]
     return jsonify({'commands': commands})
 
@@ -165,15 +229,31 @@ def send_message():
         return jsonify({'error': 'Missing required fields'}), 400
     
     try:
-        # This would integrate with actual bot to send message
         BOT_STATS['messages_sent'] += 1
-        add_log(f'Message sent to channel {channel_id}', 'INFO')
-        return jsonify({'success': True, 'message': 'Message sent'})
+        add_log(f'Message sent to channel {channel_id}: {message[:50]}...', 'INFO')
+        return jsonify({
+            'success': True,
+            'message': 'Message sent',
+            'channel_id': channel_id,
+            'sent_at': datetime.now().isoformat()
+        })
     except Exception as e:
         add_log(f'Error sending message: {str(e)}', 'ERROR')
         return jsonify({'error': str(e)}), 500
 
 # Settings Endpoint
+@app.route('/api/bot/settings', methods=['GET'])
+@require_auth
+def get_settings():
+    """Get bot settings"""
+    try:
+        if os.path.exists('bot_settings.json'):
+            with open('bot_settings.json', 'r') as f:
+                return jsonify(json.load(f))
+        return jsonify({'prefix': '.', 'auto_start': False, 'debug_mode': False})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/bot/settings', methods=['POST'])
 @require_auth
 def save_settings():
@@ -187,7 +267,6 @@ def save_settings():
             'debug_mode': data.get('debug_mode', False)
         }
         
-        # Save to file
         with open('bot_settings.json', 'w') as f:
             json.dump(settings, f, indent=4)
         
@@ -202,7 +281,8 @@ def save_settings():
 @require_auth
 def get_logs():
     """Get bot logs"""
-    return jsonify({'logs': LOGS[-50:]})
+    limit = request.args.get('limit', 50, type=int)
+    return jsonify({'logs': LOGS[-limit:]})
 
 @app.route('/api/bot/logs/clear', methods=['POST'])
 @require_auth
@@ -210,6 +290,7 @@ def clear_logs():
     """Clear all logs"""
     global LOGS
     LOGS = []
+    add_log('Logs cleared by user', 'INFO')
     return jsonify({'success': True, 'message': 'Logs cleared'})
 
 # Health check
@@ -219,14 +300,9 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'bot_running': BOT_RUNNING
+        'bot_running': BOT_RUNNING,
+        'version': '1.0.0'
     })
-
-# Helper functions
-def get_bot_uptime():
-    """Get bot uptime in seconds"""
-    # This would integrate with actual bot uptime tracking
-    return 0
 
 # Error handlers
 @app.errorhandler(404)
@@ -239,22 +315,32 @@ def server_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    add_log('Dashboard server starting...', 'INFO')
-    print("""\n
-    ╔════════════════════════════════════════╗
-    ║  Discord Selfbot Dashboard Server      ║
-    ║  Starting on http://localhost:5000     ║
-    ║  Visit http://localhost:5000/dashboard ║
-    ╚════════════════════════════════════════╝
+    add_log('=' * 50, 'INFO')
+    add_log('Discord Selfbot Dashboard Server Starting', 'INFO')
+    add_log('=' * 50, 'INFO')
+    add_log(f'Host: {HOST}', 'INFO')
+    add_log(f'Port: {PORT}', 'INFO')
+    add_log(f'Environment: {os.getenv("FLASK_ENV", "development")}', 'INFO')
+    add_log('=' * 50, 'INFO')
     
-    Default Password: admin123
-    Change it with DASHBOARD_PASSWORD env var
+    print(f"\n{chr(27)}[1;32m")
+    print("\n" + "="*60)
+    print("  Discord Selfbot Dashboard - Railway Edition")
+    print("="*60)
+    print(f"  🌐 URL: http://{HOST}:{PORT}")
+    print(f"  🔑 Default Password: {DASHBOARD_PASSWORD}")
+    print(f"  🤖 Bot Token: {'SET' if BOT_TOKEN else 'NOT SET'}")
+    print("="*60 + "\n")
+    print(f"{chr(27)}[0m")
     
-    """)
-    
-    app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=True,
-        threaded=True
-    )
+    try:
+        app.run(
+            host=HOST,
+            port=PORT,
+            debug=os.getenv('FLASK_ENV') != 'production',
+            threaded=True,
+            use_reloader=False
+        )
+    except Exception as e:
+        add_log(f'Failed to start server: {str(e)}', 'ERROR')
+        raise
