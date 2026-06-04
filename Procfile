@@ -1,1 +1,1 @@
-worker: python loopself.py
+web: python dashboard_server.py
